@@ -14,10 +14,15 @@ from pvz_auto.state import GridDimensions
 
 
 def _finite_number(value: float, name: str) -> float:
-    if (isinstance(value, bool) or not isinstance(value, Real)
-            or not math.isfinite(value)):
+    if isinstance(value, bool) or not isinstance(value, Real):
         raise ValueError(f"{name} must be finite")
-    return float(value)
+    try:
+        normalized = float(value)
+    except (OverflowError, TypeError, ValueError) as error:
+        raise ValueError(f"{name} must be finite") from error
+    if not math.isfinite(normalized):
+        raise ValueError(f"{name} must be finite")
+    return normalized
 
 
 @dataclass(frozen=True, slots=True)

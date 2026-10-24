@@ -50,7 +50,7 @@ def test_rectangle_requires_finite_origin_and_positive_size(rect):
 
 
 @pytest.mark.parametrize("point", [
-    (float("nan"), 1), (1, float("inf")), (True, 1), (1, "2"),
+    (float("nan"), 1), (1, float("inf")), (True, 1), (1, "2"), (10**1000, 1),
 ])
 def test_pixel_lookup_rejects_nonfinite_or_non_numeric_points(point):
     with pytest.raises(ValueError):
