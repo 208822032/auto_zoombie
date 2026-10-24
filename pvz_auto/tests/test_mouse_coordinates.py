@@ -1,14 +1,24 @@
+import ctypes
+from types import SimpleNamespace
+
 import pytest
 
 from pvz_auto.config import (
     WindowGeometry,
     client_to_screen,
     normalized_to_screen,
+    refresh_window_geometry,
     screen_to_client,
     validate_click_bounds,
 )
 from pvz_auto.capture.window_capture import rectangles_overlap
-from pvz_auto.control.mouse import MouseController, require_foreground_window, require_target_hwnd
+import pvz_auto.control.mouse as mouse_module
+from pvz_auto.control.mouse import (
+    MouseController,
+    click_event_flags,
+    require_foreground_window,
+    require_target_hwnd,
+)
 
 
 def test_client_screen_round_trip():
@@ -37,6 +47,54 @@ def test_click_bounds_allow_negative_origin_but_reject_outside_client_or_desktop
         validate_click_bounds(19.1, 9, geometry, (-100, 0, 200, 100))
     with pytest.raises(ValueError, match="virtual desktop"):
         validate_click_bounds(0, 0, geometry, (-99, 0, 200, 100))
+
+
+def test_live_window_origin_refreshes_and_resize_fails_closed():
+    calibrated = WindowGeometry(10, 20, 800, 600)
+    assert refresh_window_geometry(calibrated, 50, 70, 800, 600) == WindowGeometry(50, 70, 800, 600)
+    with pytest.raises(ValueError, match="size changed"):
+        refresh_window_geometry(calibrated, 50, 70, 1024, 600)
+
+
+def test_click_move_and_down_flags_are_batched_without_losing_virtual_desktop():
+    move_flags, down_flags = click_event_flags()
+    assert move_flags == (0x0001 | 0x8000 | 0x4000)
+    assert down_flags == 0x0002
+
+
+def test_click_submits_move_and_down_in_one_sendinput_batch(monkeypatch):
+    batches = []
+    user32 = SimpleNamespace()
+
+    def get_client_rect(_hwnd, rect_ptr):
+        rect = ctypes.cast(rect_ptr, ctypes.POINTER(ctypes.wintypes.RECT)).contents
+        rect.left, rect.top, rect.right, rect.bottom = 0, 0, 800, 600
+        return 1
+
+    def client_to_screen(_hwnd, point_ptr):
+        point = ctypes.cast(point_ptr, ctypes.POINTER(ctypes.wintypes.POINT)).contents
+        point.x, point.y = 100, 50
+        return 1
+
+    def send_input(count, events, _size):
+        flags = tuple(events[i].union.mi.dwFlags for i in range(count)) if count == 2 else ()
+        batches.append((count, flags))
+        return count
+
+    user32.GetForegroundWindow = lambda: 123
+    user32.GetClientRect = get_client_rect
+    user32.ClientToScreen = client_to_screen
+    user32.GetSystemMetrics = lambda index: {76: 0, 77: 0, 78: 2000, 79: 1200}[index]
+    user32.SendInput = send_input
+    monkeypatch.setattr(mouse_module.sys, "platform", "win32")
+    monkeypatch.setattr(mouse_module, "ensure_per_monitor_dpi_awareness", lambda: None)
+    monkeypatch.setattr(mouse_module.ctypes, "windll", SimpleNamespace(user32=user32), raising=False)
+
+    mouse_module.MouseController(
+        WindowGeometry(1, 2, 800, 600), hwnd=123, emergency_hotkey=False
+    ).click(5, 6)
+    assert batches[0] == (2, (0xC001, 0x0002))
+    assert batches[1][0] == 1  # guaranteed left-button release
 
 
 def test_rectangle_overlap_detects_partial_intersection_only():

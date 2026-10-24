@@ -235,9 +235,12 @@ def main() -> int:
     if args.output:
         import cv2
 
-        image = WindowCapture().capture(matches[0])
-        if not cv2.imwrite(str(args.output), image):
-            raise OSError(f"Could not write screenshot: {args.output}")
+        try:
+            image = WindowCapture().capture(matches[0])
+            if not cv2.imwrite(str(args.output), image):
+                raise OSError(f"Could not write screenshot: {args.output}")
+        except (OSError, RuntimeError, ValueError) as exc:
+            parser.error(f"Capture failed: {exc}")
         print(f"Saved {args.output}; inspect this image on the target Windows display before calibrating clicks.")
     return 0
 

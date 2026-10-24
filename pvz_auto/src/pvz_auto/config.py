@@ -45,6 +45,22 @@ def validate_click_bounds(
     return sx, sy
 
 
+def refresh_window_geometry(
+    calibrated: WindowGeometry,
+    left: int,
+    top: int,
+    width: int,
+    height: int,
+) -> WindowGeometry:
+    """Use a live origin while refusing stale calibration after a resize."""
+    if width != calibrated.width or height != calibrated.height:
+        raise ValueError(
+            "window client size changed from calibrated "
+            f"{calibrated.width}x{calibrated.height} to {width}x{height}"
+        )
+    return WindowGeometry(left, top, width, height)
+
+
 def normalized_to_screen(x: float, y: float, window: WindowGeometry) -> tuple[int, int]:
     """Convert normalized client coordinates [0, 1] to desktop pixels."""
     if not 0 <= x <= 1 or not 0 <= y <= 1:

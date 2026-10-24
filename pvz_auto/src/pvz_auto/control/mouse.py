@@ -8,7 +8,7 @@ import sys
 import threading
 import time
 
-from pvz_auto.config import WindowGeometry, validate_click_bounds
+from pvz_auto.config import WindowGeometry, refresh_window_geometry, validate_click_bounds
 from pvz_auto.capture.window_capture import ensure_per_monitor_dpi_awareness
 
 _MOUSEEVENTF_MOVE = 0x0001
@@ -17,6 +17,14 @@ _MOUSEEVENTF_LEFTUP = 0x0004
 _MOUSEEVENTF_ABSOLUTE = 0x8000
 _MOUSEEVENTF_VIRTUALDESK = 0x4000
 _VK_F12 = 0x7B
+
+
+def click_event_flags() -> tuple[int, int]:
+    """Flags for the single batched cursor-move and left-button-down input."""
+    return (
+        _MOUSEEVENTF_MOVE | _MOUSEEVENTF_ABSOLUTE | _MOUSEEVENTF_VIRTUALDESK,
+        _MOUSEEVENTF_LEFTDOWN,
+    )
 
 
 def require_target_hwnd(hwnd: int | None) -> int:
@@ -131,16 +139,40 @@ class MouseController:
         user32 = ctypes.windll.user32
         user32.GetForegroundWindow.argtypes = []
         user32.GetForegroundWindow.restype = ctypes.wintypes.HWND
+        user32.GetClientRect.argtypes = [
+            ctypes.wintypes.HWND,
+            ctypes.POINTER(ctypes.wintypes.RECT),
+        ]
+        user32.GetClientRect.restype = ctypes.wintypes.BOOL
+        user32.ClientToScreen.argtypes = [
+            ctypes.wintypes.HWND,
+            ctypes.POINTER(ctypes.wintypes.POINT),
+        ]
+        user32.ClientToScreen.restype = ctypes.wintypes.BOOL
 
         def check_foreground() -> None:
             require_foreground_window(target_hwnd, user32.GetForegroundWindow())
+
+        client_rect = ctypes.wintypes.RECT()
+        if not user32.GetClientRect(target_hwnd, ctypes.byref(client_rect)):
+            raise OSError("GetClientRect failed while preparing mouse click")
+        origin = ctypes.wintypes.POINT(0, 0)
+        if not user32.ClientToScreen(target_hwnd, ctypes.byref(origin)):
+            raise OSError("ClientToScreen failed while preparing mouse click")
+        current_window = refresh_window_geometry(
+            self.window,
+            origin.x,
+            origin.y,
+            client_rect.right - client_rect.left,
+            client_rect.bottom - client_rect.top,
+        )
 
         # Absolute SendInput coordinates span the virtual desktop, including monitors.
         vx, vy = user32.GetSystemMetrics(76), user32.GetSystemMetrics(77)
         vw, vh = user32.GetSystemMetrics(78), user32.GetSystemMetrics(79)
         if vw <= 1 or vh <= 1:
             raise OSError("Windows reported invalid virtual desktop dimensions")
-        sx, sy = validate_click_bounds(x, y, self.window, (vx, vy, vw, vh))
+        sx, sy = validate_click_bounds(x, y, current_window, (vx, vy, vw, vh))
         ax = round((sx - vx) * 65535 / (vw - 1))
         ay = round((sy - vy) * 65535 / (vh - 1))
 
@@ -163,18 +195,16 @@ class MouseController:
         user32.SendInput.argtypes = [ctypes.c_uint, ctypes.POINTER(INPUT), ctypes.c_int]
         user32.SendInput.restype = ctypes.c_uint
 
-        def send(flags: int) -> None:
-            event = INPUT(0, INPUTUNION(MOUSEINPUT(ax if flags & _MOUSEEVENTF_MOVE else 0,
-                                                 ay if flags & _MOUSEEVENTF_MOVE else 0,
-                                                 0, flags, 0, None)))
-            if user32.SendInput(1, ctypes.byref(event), ctypes.sizeof(INPUT)) != 1:
-                raise OSError(f"SendInput failed for mouse event 0x{flags:x}")
+        def send_click_batch() -> None:
+            move_flags, down_flags = click_event_flags()
+            events = (INPUT * 2)(
+                INPUT(0, INPUTUNION(MOUSEINPUT(ax, ay, 0, move_flags, 0, None))),
+                INPUT(0, INPUTUNION(MOUSEINPUT(0, 0, 0, down_flags, 0, None))),
+            )
+            sent = user32.SendInput(2, events, ctypes.sizeof(INPUT))
+            if sent != 2:
+                raise OSError(f"SendInput accepted {sent} of 2 mouse click events")
 
-        with self._state_lock:
-            if self.stopped:
-                raise RuntimeError("mouse controller is emergency-stopped")
-            check_foreground()
-            send(_MOUSEEVENTF_MOVE | _MOUSEEVENTF_ABSOLUTE | _MOUSEEVENTF_VIRTUALDESK)
         # Send an unconditional release around the down sequence. An extra
         # button-up is harmless, and this also covers errors at the SendInput
         # boundary where the caller cannot know whether Windows accepted down.
@@ -183,7 +213,7 @@ class MouseController:
                 if self.stopped:
                     raise RuntimeError("mouse controller is emergency-stopped")
                 check_foreground()
-                send(_MOUSEEVENTF_LEFTDOWN)
+                send_click_batch()
             if self.stopped:
                 raise RuntimeError("mouse controller is emergency-stopped")
             time.sleep(0.005)
