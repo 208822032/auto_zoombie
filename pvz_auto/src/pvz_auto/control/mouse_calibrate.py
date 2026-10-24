@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import argparse
 import time
-from collections.abc import Callable, Sequence
+from collections.abc import Sequence
 
 from pvz_auto.capture.window_capture import WindowCapture, WindowInfo, list_windows
 from pvz_auto.config import WindowGeometry, validate_click_bounds
@@ -60,11 +60,9 @@ def main(argv: Sequence[str] | None = None) -> int:
     except (EOFError, KeyboardInterrupt):
         print("Cancelled.")
         return 1
-    if response.strip() != "CLICK":
-        print("Cancelled; no click sent.")
-        return 1
-    controller = MouseController(geometry, hwnd=window.hwnd)
+    controller: MouseController | None = None
     try:
+        controller = MouseController(geometry, hwnd=window.hwnd)
         if controller.stopped:
             raise RuntimeError("F12 emergency stop is active")
         # A fresh discovery plus capture refuses minimized, background, or
@@ -75,6 +73,14 @@ def main(argv: Sequence[str] | None = None) -> int:
         ):
             raise RuntimeError("game window geometry changed; rerun calibration")
         WindowCapture().capture(current)
+        if not confirmation_allowed(
+            response,
+            foreground=True,  # A successful capture verifies foreground ownership.
+            geometry_unchanged=True,  # The discovery comparison above verifies client bounds.
+            unobscured=True,  # A successful capture rejects occlusion.
+        ):
+            print("Cancelled; no click sent.")
+            return 1
         for remaining in range(3, 0, -1):
             if controller.stopped:
                 raise RuntimeError("F12 emergency stop is active")
@@ -89,11 +95,15 @@ def main(argv: Sequence[str] | None = None) -> int:
             raise RuntimeError("game window geometry changed; click refused")
         WindowCapture().capture(current)
         controller.click(args.x, args.y)
+    except KeyboardInterrupt:
+        print("Cancelled; no click sent.")
+        return 1
     except (OSError, RuntimeError, ValueError) as exc:
         print(f"Click refused: {exc}")
         return 1
     finally:
-        controller.stop_emergency_hotkey_listener()
+        if controller is not None:
+            controller.stop_emergency_hotkey_listener()
     print("One click sent.")
     return 0
 
