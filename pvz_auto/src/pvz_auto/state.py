@@ -59,8 +59,8 @@ class SelectedPlantCard:
 
     def __post_init__(self) -> None:
         _nonnegative_integer(self.slot, "card slot")
-        if not self.plant_id:
-            raise ValueError("plant_id must not be empty")
+        if not isinstance(self.plant_id, str) or not self.plant_id:
+            raise ValueError("plant_id must be a non-empty string")
         if self.cooldown_seconds is not None:
             _finite_nonnegative(self.cooldown_seconds, "cooldown_seconds")
         if self.ready is not None and not isinstance(self.ready, bool):
@@ -75,8 +75,8 @@ class DetectedPlant:
     confidence: float
 
     def __post_init__(self) -> None:
-        if not self.plant_id:
-            raise ValueError("plant_id must not be empty")
+        if not isinstance(self.plant_id, str) or not self.plant_id:
+            raise ValueError("plant_id must be a non-empty string")
         _nonnegative_integer(self.row, "row")
         _finite_nonnegative(self.board_x, "board_x")
         _confidence(self.confidence)
@@ -90,8 +90,8 @@ class DetectedThreat:
     confidence: float
 
     def __post_init__(self) -> None:
-        if not self.threat_id:
-            raise ValueError("threat_id must not be empty")
+        if not isinstance(self.threat_id, str) or not self.threat_id:
+            raise ValueError("threat_id must be a non-empty string")
         _nonnegative_integer(self.row, "row")
         _finite_nonnegative(self.board_x, "board_x")
         _confidence(self.confidence)

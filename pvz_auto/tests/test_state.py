@@ -55,6 +55,20 @@ def test_card_cooldown_must_be_finite_and_nonnegative(cooldown):
         SelectedPlantCard(0, "plant", cooldown)
 
 
+@pytest.mark.parametrize(
+    "factory",
+    [
+        lambda value: SelectedPlantCard(0, value),
+        lambda value: DetectedPlant(value, 0, 0.0, 1.0),
+        lambda value: DetectedThreat(value, 0, 0.0, 1.0),
+    ],
+)
+@pytest.mark.parametrize("invalid_id", [None, 0, False, [], {}])
+def test_asset_ids_must_be_nonempty_strings(factory, invalid_id):
+    with pytest.raises(ValueError, match="non-empty string"):
+        factory(invalid_id)
+
+
 def test_state_rejects_invalid_counts_duplicate_slots_and_out_of_grid_detections():
     with pytest.raises(ValueError, match="sun"):
         GameState(sun=-1)
