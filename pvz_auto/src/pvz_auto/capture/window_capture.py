@@ -19,7 +19,7 @@ _dpi_lock = threading.Lock()
 _dpi_ready = False
 
 
-def _enable_per_monitor_dpi_awareness() -> None:
+def ensure_per_monitor_dpi_awareness() -> None:
     """Set process DPI awareness before any HWND bounds are queried.
 
     Windows reports ERROR_ACCESS_DENIED if a manifest or earlier call already
@@ -151,7 +151,7 @@ def list_windows() -> list[WindowInfo]:
     """Return visible, titled windows and their client-area screen bounds."""
     if sys.platform != "win32":
         raise OSError("Window discovery is available only on Windows")
-    _enable_per_monitor_dpi_awareness()
+    ensure_per_monitor_dpi_awareness()
     user32 = ctypes.windll.user32
     wintypes = ctypes.wintypes
     _configure_window_api(user32)
@@ -193,7 +193,7 @@ class WindowCapture:
     def capture(self, window: WindowInfo) -> Any:
         if sys.platform != "win32":
             raise OSError("Window capture is available only on Windows")
-        _enable_per_monitor_dpi_awareness()
+        ensure_per_monitor_dpi_awareness()
         user32 = ctypes.windll.user32
         _configure_window_api(user32)
         _validate_capture_window(user32, window)

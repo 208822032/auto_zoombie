@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import ctypes
+import ctypes.wintypes
 import sys
 import threading
 import time
 
 from pvz_auto.config import WindowGeometry, validate_click_bounds
+from pvz_auto.capture.window_capture import ensure_per_monitor_dpi_awareness
 
 _MOUSEEVENTF_MOVE = 0x0001
 _MOUSEEVENTF_LEFTDOWN = 0x0002
@@ -15,6 +17,19 @@ _MOUSEEVENTF_LEFTUP = 0x0004
 _MOUSEEVENTF_ABSOLUTE = 0x8000
 _MOUSEEVENTF_VIRTUALDESK = 0x4000
 _VK_F12 = 0x7B
+
+
+def require_target_hwnd(hwnd: int | None) -> int:
+    """Return a usable target HWND or fail closed before input."""
+    if hwnd is None or int(hwnd) == 0:
+        raise RuntimeError("mouse input requires the target game HWND")
+    return int(hwnd)
+
+
+def require_foreground_window(target_hwnd: int, foreground_hwnd: int | None) -> None:
+    """Raise unless the game still owns foreground focus."""
+    if foreground_hwnd is None or int(foreground_hwnd) != int(target_hwnd):
+        raise RuntimeError("mouse input refused: target game window is not foreground")
 
 
 class MouseController:
@@ -26,8 +41,15 @@ class MouseController:
     asynchronously and calls ``emergency_stop`` on key-down.
     """
 
-    def __init__(self, window: WindowGeometry, *, emergency_hotkey: bool = True) -> None:
+    def __init__(
+        self,
+        window: WindowGeometry,
+        hwnd: int | None = None,
+        *,
+        emergency_hotkey: bool = True,
+    ) -> None:
         self.window = window
+        self.hwnd = hwnd
         self._stopped = threading.Event()
         self._state_lock = threading.Lock()
         self._hotkey_shutdown = threading.Event()
@@ -104,7 +126,15 @@ class MouseController:
             raise RuntimeError("mouse controller is emergency-stopped")
         if sys.platform != "win32":
             raise OSError("Mouse input is available only on Windows")
+        target_hwnd = require_target_hwnd(self.hwnd)
+        ensure_per_monitor_dpi_awareness()
         user32 = ctypes.windll.user32
+        user32.GetForegroundWindow.argtypes = []
+        user32.GetForegroundWindow.restype = ctypes.wintypes.HWND
+
+        def check_foreground() -> None:
+            require_foreground_window(target_hwnd, user32.GetForegroundWindow())
+
         # Absolute SendInput coordinates span the virtual desktop, including monitors.
         vx, vy = user32.GetSystemMetrics(76), user32.GetSystemMetrics(77)
         vw, vh = user32.GetSystemMetrics(78), user32.GetSystemMetrics(79)
@@ -143,6 +173,7 @@ class MouseController:
         with self._state_lock:
             if self.stopped:
                 raise RuntimeError("mouse controller is emergency-stopped")
+            check_foreground()
             send(_MOUSEEVENTF_MOVE | _MOUSEEVENTF_ABSOLUTE | _MOUSEEVENTF_VIRTUALDESK)
         # Send an unconditional release around the down sequence. An extra
         # button-up is harmless, and this also covers errors at the SendInput
@@ -151,6 +182,7 @@ class MouseController:
             with self._state_lock:
                 if self.stopped:
                     raise RuntimeError("mouse controller is emergency-stopped")
+                check_foreground()
                 send(_MOUSEEVENTF_LEFTDOWN)
             if self.stopped:
                 raise RuntimeError("mouse controller is emergency-stopped")

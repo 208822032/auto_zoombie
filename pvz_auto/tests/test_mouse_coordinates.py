@@ -8,7 +8,7 @@ from pvz_auto.config import (
     validate_click_bounds,
 )
 from pvz_auto.capture.window_capture import rectangles_overlap
-from pvz_auto.control.mouse import MouseController
+from pvz_auto.control.mouse import MouseController, require_foreground_window, require_target_hwnd
 
 
 def test_client_screen_round_trip():
@@ -50,3 +50,19 @@ def test_emergency_stop_is_sticky_and_blocks_click():
     assert mouse.stopped
     with pytest.raises(RuntimeError, match="emergency-stopped"):
         mouse.click(2, 3)
+
+
+def test_target_hwnd_is_required_before_input():
+    with pytest.raises(RuntimeError, match="requires the target game HWND"):
+        require_target_hwnd(None)
+    with pytest.raises(RuntimeError, match="requires the target game HWND"):
+        require_target_hwnd(0)
+    assert require_target_hwnd(0x12345678) == 0x12345678
+
+
+def test_foreground_guard_rejects_focus_switch():
+    require_foreground_window(0x1234, 0x1234)
+    with pytest.raises(RuntimeError, match="not foreground"):
+        require_foreground_window(0x1234, 0x5678)
+    with pytest.raises(RuntimeError, match="not foreground"):
+        require_foreground_window(0x1234, None)
