@@ -43,13 +43,15 @@ def test_grid_dimensions_must_be_positive_integers(grid):
         GridDimensions(*grid)
 
 
-@pytest.mark.parametrize("confidence", [-0.01, 1.01, float("nan"), float("inf")])
+@pytest.mark.parametrize(
+    "confidence", [-0.01, 1.01, float("nan"), float("inf"), True, "0.5"]
+)
 def test_detection_confidence_must_be_finite_and_bounded(confidence):
     with pytest.raises(ValueError, match="confidence"):
         DetectedThreat("zombie", 0, 1.0, confidence)
 
 
-@pytest.mark.parametrize("cooldown", [-1.0, float("nan"), float("inf")])
+@pytest.mark.parametrize("cooldown", [-1.0, float("nan"), float("inf"), False, "1"])
 def test_card_cooldown_must_be_finite_and_nonnegative(cooldown):
     with pytest.raises(ValueError, match="cooldown"):
         SelectedPlantCard(0, "plant", cooldown)
@@ -67,6 +69,49 @@ def test_card_cooldown_must_be_finite_and_nonnegative(cooldown):
 def test_asset_ids_must_be_nonempty_strings(factory, invalid_id):
     with pytest.raises(ValueError, match="non-empty string"):
         factory(invalid_id)
+
+
+@pytest.mark.parametrize(
+    "kwargs, message",
+    [
+        ({"selected_cards": (object(),)}, "selected_cards must contain"),
+        ({"plants": ("not a plant",)}, "plants must contain"),
+        ({"threats": (None,)}, "threats must contain"),
+        ({"selected_cards": []}, "selected_cards must be a tuple"),
+        ({"plants": []}, "plants must be a tuple"),
+        ({"threats": []}, "threats must be a tuple"),
+        ({"grid": object()}, "grid must be GridDimensions"),
+    ],
+)
+def test_state_rejects_malformed_collection_values_before_grid_checks(kwargs, message):
+    with pytest.raises(ValueError, match=message):
+        GameState(**kwargs)
+
+
+@pytest.mark.parametrize(
+    "factory, args",
+    [
+        (SelectedPlantCard, (0, "plant", True)),
+        (SelectedPlantCard, (0, "plant", "1")),
+        (DetectedPlant, ("plant", 0, False, 0.5)),
+        (DetectedPlant, ("plant", 0, "1.0", 0.5)),
+        (DetectedThreat, ("zombie", 0, 1.0, "0.5")),
+    ],
+)
+def test_numeric_observations_reject_bool_and_non_numeric_values(factory, args):
+    with pytest.raises(ValueError):
+        factory(*args)
+
+
+def test_numeric_boundary_values_are_accepted():
+    state = GameState(
+        grid=GridDimensions(1, 9),
+        selected_cards=(SelectedPlantCard(0, "plant", 0),),
+        plants=(DetectedPlant("plant", 0, 0, 0),),
+        threats=(DetectedThreat("zombie", 0, 9, 1),),
+    )
+    assert state.plants[0].confidence == 0
+    assert state.threats[0].board_x == state.grid.columns
 
 
 def test_state_rejects_invalid_counts_duplicate_slots_and_out_of_grid_detections():

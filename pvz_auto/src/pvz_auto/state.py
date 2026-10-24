@@ -7,6 +7,7 @@ with the left edge at 0 and the right edge at ``grid.columns``.
 from dataclasses import dataclass
 from enum import Enum
 import math
+from numbers import Real
 
 
 class ScreenState(str, Enum):
@@ -22,12 +23,14 @@ class GameMode(str, Enum):
 
 
 def _finite_nonnegative(value: float, name: str) -> None:
-    if not math.isfinite(value) or value < 0:
+    if (isinstance(value, bool) or not isinstance(value, Real)
+            or not math.isfinite(value) or value < 0):
         raise ValueError(f"{name} must be finite and nonnegative")
 
 
 def _confidence(value: float) -> None:
-    if not math.isfinite(value) or not 0 <= value <= 1:
+    if (isinstance(value, bool) or not isinstance(value, Real)
+            or not math.isfinite(value) or not 0 <= value <= 1):
         raise ValueError("confidence must be finite and in [0, 1]")
 
 
@@ -111,6 +114,18 @@ class GameState:
     threats: tuple[DetectedThreat, ...] = ()
 
     def __post_init__(self) -> None:
+        collections = (
+            ("selected_cards", self.selected_cards, SelectedPlantCard),
+            ("plants", self.plants, DetectedPlant),
+            ("threats", self.threats, DetectedThreat),
+        )
+        for name, items, item_type in collections:
+            if not isinstance(items, tuple):
+                raise ValueError(f"{name} must be a tuple")
+            if any(not isinstance(item, item_type) for item in items):
+                raise ValueError(f"{name} must contain only {item_type.__name__} values")
+        if self.grid is not None and not isinstance(self.grid, GridDimensions):
+            raise ValueError("grid must be GridDimensions or None")
         if not isinstance(self.screen, ScreenState):
             raise ValueError("screen must be a ScreenState")
         if self.mode is not None and not isinstance(self.mode, GameMode):
@@ -124,8 +139,5 @@ class GameState:
             for entity in (*self.plants, *self.threats):
                 if entity.row >= self.grid.rows or entity.board_x > self.grid.columns:
                     raise ValueError("detected entity is outside the known grid")
-        if not all(isinstance(items, tuple) for items in
-                   (self.selected_cards, self.plants, self.threats)):
-            raise ValueError("selected_cards, plants, and threats must be tuples")
         if len({card.slot for card in self.selected_cards}) != len(self.selected_cards):
             raise ValueError("selected card slots must be unique")
