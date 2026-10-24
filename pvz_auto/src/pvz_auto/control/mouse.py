@@ -17,19 +17,22 @@ _VK_F12 = 0x7B
 
 
 class MouseController:
-    """Send client-relative clicks; F12 or emergency_stop permanently stops input.
+    """Send client-relative clicks; F12 permanently stops input on Windows.
 
-    Call :meth:`start_emergency_hotkey` once after constructing the controller
-    to enable the global F12 listener. The listener polls asynchronously and
-    calls ``emergency_stop`` on key-down.
+    The global F12 listener starts automatically on Windows when a controller
+    is constructed. Set ``emergency_hotkey=False`` to opt out, or call
+    :meth:`start_emergency_hotkey` later to enable it. The listener polls
+    asynchronously and calls ``emergency_stop`` on key-down.
     """
 
-    def __init__(self, window: WindowGeometry) -> None:
+    def __init__(self, window: WindowGeometry, *, emergency_hotkey: bool = True) -> None:
         self.window = window
         self._stopped = threading.Event()
         self._state_lock = threading.Lock()
         self._hotkey_shutdown = threading.Event()
         self._hotkey_thread: threading.Thread | None = None
+        if emergency_hotkey and sys.platform == "win32":
+            self.start_emergency_hotkey()
 
     @property
     def stopped(self) -> bool:
