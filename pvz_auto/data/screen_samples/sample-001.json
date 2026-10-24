@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "image": "sample-001.png",
+  "source": "user-provided screenshot",
+  "image_size_px": {
+    "width": 1086,
+    "height": 637
+  },
+  "frame_type": "full_window_screenshot",
+  "includes_window_chrome": true,
+  "game": {
+    "title_text": "植物大战僵尸杂交版v3.19",
+    "screen_state": {
+      "value": "active_lawn",
+      "confidence": 1.0
+    },
+    "mode": null,
+    "wave": null,
+    "sun": {
+      "value": 250,
+      "confidence": 0.99
+    }
+  },
+  "grid": {
+    "rows": 5,
+    "columns": 9,
+    "lawn_rect_px": null,
+    "dimensions_status": "visually estimated; pixel bounds not calibrated"
+  },
+  "entities": null,
+  "annotation_status": "partial",
+  "use_as_ground_truth": false,
+  "notes": [
+    "This full-window screenshot includes the Windows title bar and is not the same crop as WindowCapture output.",
+    "Mode, wave, exact lawn bounds, plant identities, and threat positions still need manual confirmation.",
+    "Do not use this file as a measured detector fixture until its lawn rectangle and entities are annotated."
+  ]
+}
