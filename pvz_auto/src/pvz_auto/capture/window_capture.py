@@ -30,8 +30,21 @@ def list_windows() -> list[WindowInfo]:
     if sys.platform != "win32":
         raise OSError("Window discovery is available only on Windows")
     user32 = ctypes.windll.user32
+    wintypes = ctypes.wintypes
+    enum_proc_type = ctypes.WINFUNCTYPE(wintypes.BOOL, wintypes.HWND, wintypes.LPARAM)
+    user32.EnumWindows.argtypes = [enum_proc_type, wintypes.LPARAM]
+    user32.EnumWindows.restype = wintypes.BOOL
+    user32.IsWindowVisible.argtypes = [wintypes.HWND]
+    user32.IsWindowVisible.restype = wintypes.BOOL
+    user32.GetWindowTextLengthW.argtypes = [wintypes.HWND]
+    user32.GetWindowTextLengthW.restype = ctypes.c_int
+    user32.GetWindowTextW.argtypes = [wintypes.HWND, wintypes.LPWSTR, ctypes.c_int]
+    user32.GetWindowTextW.restype = ctypes.c_int
+    user32.GetClientRect.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.RECT)]
+    user32.GetClientRect.restype = wintypes.BOOL
+    user32.ClientToScreen.argtypes = [wintypes.HWND, ctypes.POINTER(wintypes.POINT)]
+    user32.ClientToScreen.restype = wintypes.BOOL
     results: list[WindowInfo] = []
-    enum_proc = ctypes.WINFUNCTYPE(ctypes.c_bool, ctypes.c_void_p, ctypes.c_void_p)
 
     def visit(hwnd: int, _lparam: int) -> bool:
         if not user32.IsWindowVisible(hwnd):
@@ -41,10 +54,10 @@ def list_windows() -> list[WindowInfo]:
             return True
         title = ctypes.create_unicode_buffer(length + 1)
         user32.GetWindowTextW(hwnd, title, length + 1)
-        rect = ctypes.wintypes.RECT()
+        rect = wintypes.RECT()
         if not user32.GetClientRect(hwnd, ctypes.byref(rect)):
             return True
-        origin = ctypes.wintypes.POINT(0, 0)
+        origin = wintypes.POINT(0, 0)
         if not user32.ClientToScreen(hwnd, ctypes.byref(origin)):
             return True
         width, height = rect.right - rect.left, rect.bottom - rect.top
@@ -52,7 +65,7 @@ def list_windows() -> list[WindowInfo]:
             results.append(WindowInfo(int(hwnd), title.value, origin.x, origin.y, width, height))
         return True
 
-    user32.EnumWindows(enum_proc(visit), 0)
+    user32.EnumWindows(enum_proc_type(visit), 0)
     return results
 
 
