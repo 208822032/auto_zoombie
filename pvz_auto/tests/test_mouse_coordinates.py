@@ -1,6 +1,13 @@
 import pytest
 
-from pvz_auto.config import WindowGeometry, client_to_screen, normalized_to_screen, screen_to_client
+from pvz_auto.config import (
+    WindowGeometry,
+    client_to_screen,
+    normalized_to_screen,
+    screen_to_client,
+    validate_click_bounds,
+)
+from pvz_auto.capture.window_capture import rectangles_overlap
 from pvz_auto.control.mouse import MouseController
 
 
@@ -21,6 +28,20 @@ def test_normalized_coordinates_cover_client_bounds():
 def test_normalized_coordinates_reject_out_of_range(point):
     with pytest.raises(ValueError):
         normalized_to_screen(*point, WindowGeometry(0, 0, 10, 10))
+
+
+def test_click_bounds_allow_negative_origin_but_reject_outside_client_or_desktop():
+    geometry = WindowGeometry(-100, 50, 20, 10)
+    assert validate_click_bounds(19, 9, geometry, (-100, 0, 200, 100)) == (-81, 59)
+    with pytest.raises(ValueError, match="client area"):
+        validate_click_bounds(19.1, 9, geometry, (-100, 0, 200, 100))
+    with pytest.raises(ValueError, match="virtual desktop"):
+        validate_click_bounds(0, 0, geometry, (-99, 0, 200, 100))
+
+
+def test_rectangle_overlap_detects_partial_intersection_only():
+    assert rectangles_overlap((0, 0, 10, 10), (9, 9, 12, 12))
+    assert not rectangles_overlap((0, 0, 10, 10), (10, 2, 12, 8))
 
 
 def test_emergency_stop_is_sticky_and_blocks_click():

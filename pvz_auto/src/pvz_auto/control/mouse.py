@@ -7,12 +7,13 @@ import sys
 import threading
 import time
 
-from pvz_auto.config import WindowGeometry, client_to_screen
+from pvz_auto.config import WindowGeometry, validate_click_bounds
 
 _MOUSEEVENTF_MOVE = 0x0001
 _MOUSEEVENTF_LEFTDOWN = 0x0002
 _MOUSEEVENTF_LEFTUP = 0x0004
 _MOUSEEVENTF_ABSOLUTE = 0x8000
+_MOUSEEVENTF_VIRTUALDESK = 0x4000
 _VK_F12 = 0x7B
 
 
@@ -103,13 +104,13 @@ class MouseController:
             raise RuntimeError("mouse controller is emergency-stopped")
         if sys.platform != "win32":
             raise OSError("Mouse input is available only on Windows")
-        sx, sy = client_to_screen(x, y, self.window)
         user32 = ctypes.windll.user32
         # Absolute SendInput coordinates span the virtual desktop, including monitors.
         vx, vy = user32.GetSystemMetrics(76), user32.GetSystemMetrics(77)
         vw, vh = user32.GetSystemMetrics(78), user32.GetSystemMetrics(79)
         if vw <= 1 or vh <= 1:
             raise OSError("Windows reported invalid virtual desktop dimensions")
+        sx, sy = validate_click_bounds(x, y, self.window, (vx, vy, vw, vh))
         ax = round((sx - vx) * 65535 / (vw - 1))
         ay = round((sy - vy) * 65535 / (vh - 1))
 
@@ -142,14 +143,15 @@ class MouseController:
         with self._state_lock:
             if self.stopped:
                 raise RuntimeError("mouse controller is emergency-stopped")
-            send(_MOUSEEVENTF_MOVE | _MOUSEEVENTF_ABSOLUTE)
-        with self._state_lock:
-            if self.stopped:
-                raise RuntimeError("mouse controller is emergency-stopped")
-            send(_MOUSEEVENTF_LEFTDOWN)
-        # Once down succeeds, always release, including if stop or another error
-        # occurs. This keeps the button from remaining held across action aborts.
+            send(_MOUSEEVENTF_MOVE | _MOUSEEVENTF_ABSOLUTE | _MOUSEEVENTF_VIRTUALDESK)
+        # Send an unconditional release around the down sequence. An extra
+        # button-up is harmless, and this also covers errors at the SendInput
+        # boundary where the caller cannot know whether Windows accepted down.
         try:
+            with self._state_lock:
+                if self.stopped:
+                    raise RuntimeError("mouse controller is emergency-stopped")
+                send(_MOUSEEVENTF_LEFTDOWN)
             if self.stopped:
                 raise RuntimeError("mouse controller is emergency-stopped")
             time.sleep(0.005)
